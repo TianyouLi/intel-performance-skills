@@ -140,6 +140,22 @@ void report_corruption(const Record &r) {
 
 ## Verification
 
+### Confirm candidate branches are truly cold (data-driven)
+
+If you have an Intel CPU and the binary is compiled with `-g`, use the
+**Branch probability measurement** building block from the `linux-perf` skill
+to confirm the branch probability before annotating:
+
+```bash
+python3 skills/linux-perf/tools/branchprob.py foo.c foo process
+```
+
+Look at the `Taken%` column for branches whose target is the candidate callee.
+A `Taken%` below ~0.1% is strong evidence the callee is cold and the annotation
+is appropriate.  This step is optional but removes guesswork for borderline cases.
+
+### Confirm the annotation moved code out of the hot path
+
 Build with `-O2` (or `-O3`) and compare the generated assembly:
 
 ```bash

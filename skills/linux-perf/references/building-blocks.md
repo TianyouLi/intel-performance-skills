@@ -16,6 +16,7 @@ Read this file when executing any building block referenced from Part 2 flows.
 - [Top-N lines within a function](#building-block-top-n-lines-within-a-function)
 - [Dual-profile comparison](#building-block-dual-profile-comparison)
 - [Annotate pattern scan](#building-block-annotate-pattern-scan)
+- [Branch probability measurement](#building-block-branch-probability-measurement)
 
 ---
 
@@ -716,3 +717,148 @@ If no patterns match: output a single line — *"No anti-patterns detected in
 **When invoked from a reporting flow (Flow E)**: suppress the Suggested RS column
 and present only the Pattern and Evidence columns as observation bullets.
 
+
+---
+
+## Building block: Branch probability measurement
+
+Measure the real runtime probability of each conditional branch in a hot
+function using Intel PMU branch-retirement events.  Answers: *"which of the
+branches inside this function are almost never taken?"* — the key input for
+deciding which callees to annotate `[[gnu::cold]]`.
+
+**Intel CPUs only.**  The events `BR_INST_RETIRED.NEAR_TAKEN` and
+`BR_INST_RETIRED.NOT_TAKEN` are Intel-specific.  Check before using:
+
+```bash
+grep -q 'vendor_id.*GenuineIntel' /proc/cpuinfo || echo "NOT an Intel CPU"
+```
+
+### Manual procedure
+
+Use this when `tools/branchprob.py` is not available.
+
+**Step 1 — Record**
+
+```bash
+perf record -c 1000 \
+  -e '{BR_INST_RETIRED.NEAR_TAKEN:upp,BR_INST_RETIRED.NOT_TAKEN:upp,cycles:u}' \
+  -o /tmp/branch.data \
+  ./binary
+```
+
+Lower `--period` (e.g. `-c 100`) for more samples on short-lived workloads.
+The `:upp` modifier requests user-space, precise, precise-IP sampling — reduces
+skid so counts land on the right instruction.
+
+**Step 2 — Annotate**
+
+```bash
+perf annotate --source --no-vmlinux -l -n --stdio -i /tmp/branch.data \
+  > /tmp/branch.annotate
+```
+
+Output format per data line:
+```
+  NEAR_TAKEN   NOT_TAKEN   CYCLES :   ADDR:   MNEMONIC  [operands]
+```
+The event group order matches the recording order: col1 = taken, col2 = not-taken.
+
+**Step 3 — Macrofusion correction**
+
+x86 CPUs can fuse a `cmp`/`test` with the following conditional jump into one
+micro-op.  When this happens the PMU attributes both counts to the *compare*
+instruction, not the jump.  Detect and correct:
+
+- Find a non-jump instruction with nonzero col1 or col2, immediately followed
+  by a conditional jump.
+- Move both counts from the compare to the jump; zero the compare.
+
+**Step 4 — Calculate probabilities**
+
+For each conditional jump instruction:
+
+```
+taken%  = 100 × col1 / (col1 + col2)
+```
+
+Resolve instruction addresses to source lines with `addr2line`:
+
+```bash
+addr2line -e ./binary ADDR1 ADDR2 ...
+```
+
+Group results by source line.  A branch with `taken% < 0.1%` is a strong cold
+candidate; the callee it reaches should be reviewed for `[[gnu::cold]]`.
+
+**Step 5 — Interpret**
+
+Present results as a table sorted by sample count (hottest branches first):
+
+| Taken% | Samples | Source line | Branch target | Assembly |
+|-------:|--------:|------------:|--------------:|----------|
+|  91.2% |  607094 | :11         | :18           | `ja ...` |
+|   0.3% |     412 | :27         | :42           | `je ...` |
+
+A `Taken%` near 0% or near 100% means the branch is highly predictable.
+Near 0% taken means the *target* line is almost never reached — that line's
+callee is a `[[gnu::cold]]` candidate.
+
+---
+
+### Automated procedure
+
+`tools/branchprob.py` automates Steps 1–5.  Its output goes to **stdout** for
+direct agent ingestion.  Progress messages go to stderr.
+
+**Basic usage:**
+
+```bash
+python3 tools/branchprob.py <source.c> <binary>
+```
+
+**Focused on hot functions** (recommended when you already know which functions
+are hot from Flow B):
+
+```bash
+python3 tools/branchprob.py foo.c foo process_data compute_hash
+```
+
+Only branches inside `process_data` and `compute_hash` are reported.
+This keeps the output small and directly actionable.
+
+**Substring matching** (for overloaded or versioned names):
+
+```bash
+python3 tools/branchprob.py foo.c foo --fuzzy process
+# matches: process_data, process_request, process_v2, ...
+```
+
+**Write an annotated source copy** (for the human to read):
+
+```bash
+python3 tools/branchprob.py foo.c foo process_data --profile foo.c.profile
+```
+
+**Options summary:**
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `[function ...]` | (all) | Restrict output to named functions |
+| `--period N` | 1000 | Sampling period (lower = more samples) |
+| `--min-samples N` | 5 | Hide branches with fewer samples (ignored when functions are named) |
+| `--fuzzy` | off | Substring function-name matching |
+| `--profile FILE` | none | Write `/* PERF PROB: X.XX% */` annotated source |
+| `--debug` | off | Save raw `perf annotate` output for inspection |
+
+**Interpreting the output:**
+
+The script reports one section per function.  Within each section, branches
+are sorted by sample count (hottest first).  `Taken%` is the fraction of
+executions where the branch was taken.  `Branch target` is the source line
+the jump lands on when taken.
+
+A branch with low `Taken%` (< ~0.1%) means execution almost never follows
+that path — the callee at the target line is a candidate for
+`[[gnu::cold]]`.  See `patterns/cold-path-annotation.md` in the
+`performance-patterns` skill.

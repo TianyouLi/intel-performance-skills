@@ -208,6 +208,7 @@ Detailed command syntax, flags, and output formats for each primitive. Read
 | `Top-N lines within a function` | Ranked source lines inside one function |
 | `Dual-profile comparison` | Run top-15 at 1 core and at N cores; produce delta table of rank/% changes to identify scaling bottleneck candidates |
 | `Annotate pattern scan` | Scan `perf annotate` output for a function and return a structured table of detected anti-patterns (scalar FP, narrow SIMD, serial accumulator, horizontal reduction, lock CAS, memory load pressure) with suggested resolution strategies |
+| `Branch probability measurement` | Measure per-branch taken-probabilities in hot functions using Intel PMU events; identify near-zero-probability branches as `[[gnu::cold]]` candidates |
 
 # Part 5: resolution strategies
 
