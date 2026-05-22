@@ -16,6 +16,8 @@ primitives at the bottom of this file and report the gap.
 | Symbol (as seen in perf) | `.so` file | Library | Suggested minimum version | Reason |
 |--------------------------|-----------|---------|--------------------------|--------|
 | `gcm_init_avx` | `libcrypto.so.3` | OpenSSL | 3.3 | Significant AVX-512 optimizations for AES-GCM in 3.3+ (Sapphire Rapids and later) |
+| `ossl_aes_gcm_encrypt_avx512` | `libcrypto.so.3` | OpenSSL | 3.3 | AVX-512 AES-GCM encrypt path present in earlier versions but significantly further optimized in 3.3+; if hot on a pre-3.3 system, upgrade for a material speedup |
+| `ossl_aes_gcm_init_avx512` | `libcrypto.so.3` | OpenSSL | 3.3 | AVX-512 AES-GCM init path present in earlier versions but significantly further optimized in 3.3+; if hot on a pre-3.3 system, upgrade for a material speedup |
 | `aesni_xts_256_encrypt_avx512` | `libcrypto.so.3` | OpenSSL | 3.3 | AVX-512 AES-XTS-256 path present in earlier versions but significantly further optimized in 3.3+; if hot on a pre-3.3 system, upgrade for a material speedup |
 | `aesni_xts_encrypt` | `libcrypto.so.3` | OpenSSL | 3.3 | Non-AVX-512 AES-XTS path; seeing this hot in profiles on a modern CPU means the AVX-512 variant (`aesni_xts_256_encrypt_avx512`) is absent — upgrade to OpenSSL 3.3 to get the faster implementation |
 
