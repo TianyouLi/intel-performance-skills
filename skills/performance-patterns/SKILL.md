@@ -6,10 +6,12 @@ description: >-
   review for performance, or write new SIMD/vectorized code — even without
   profiling data. Trigger on: serial accumulator loops, narrow SIMD (xmm/ymm
   that could be ymm/zmm), _mm* intrinsics, HITM/cmpxchg clusters, false
-  sharing, missing restrict or vzeroupper, or any request to write a fast
+  sharing, missing restrict or vzeroupper, hot symbol inside a system library
+  (.so) that may have a version gap, or any request to write a fast
   reduction, dot product, or CPU-dispatched function. Patterns: serial
   accumulator, TTAS spinlock, SIMD upconversion (zipper), false sharing,
-  per-CPU stats, missing vzeroupper, missing restrict, CPU dispatch.
+  per-CPU stats, missing vzeroupper, missing restrict, CPU dispatch,
+  library version upgrade.
 ---
 
 <!-- (C) 2026 Intel Corporation, MIT license -->

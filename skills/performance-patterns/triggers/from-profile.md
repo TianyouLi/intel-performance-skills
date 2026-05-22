@@ -19,6 +19,7 @@ the full diagnosis and fix.
 | `lock cmpxchg` cluster with high density in annotate; throughput drops with more threads | Test-and-Set spinlock | `patterns/ttas.md` |
 | `perf c2c` HITM > 5% on a line; different byte offsets written by different threads | False sharing | `patterns/false-sharing.md` |
 | `lock add` / `lock xadd` / `lock inc` in hot path; `perf c2c` true sharing on a stats/counter field | Shared statistics counter | `patterns/per-cpu-stats.md` |
+| Hot symbol's DSO column shows a `.so` file (not the application binary); symbol appears in `references/library-versions.md` | Library version upgrade | `patterns/library-version-upgrade.md` |
 
 ---
 
@@ -115,3 +116,15 @@ grows linearly with thread count in the scaling profile, and field names suggest
 accounting (`count`, `total`, `hits`, `misses`, `bytes`, `errors`, `stat`).
 
 Read `patterns/per-cpu-stats.md`.
+
+### Library version upgrade
+
+`perf report` or `perf annotate` shows a symbol whose DSO column names a
+system library (`.so` file) rather than the application binary. The function
+name matches an entry in `references/library-versions.md` — a known hotspot
+for which a newer library version ships a significantly better implementation.
+
+The application code itself is not the bottleneck. The gain comes from the
+library update, not from any source change.
+
+Read `patterns/library-version-upgrade.md`.
