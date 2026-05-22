@@ -105,6 +105,22 @@ Each item links to the full pattern file for rationale and code templates.
 
 ---
 
+### Function hot/cold classification
+
+- [ ] **Mark any error-reporting or rare-path function `[[gnu::cold]]`
+  (or `__attribute__((cold))` in C or older C++).**  
+  Any function whose sole purpose is error reporting, assertion failure, or
+  handling a rare corner case should carry this annotation — unconditionally,
+  without needing call-frequency data. The annotation tells the compiler to
+  move the function's code out of the hot instruction stream, improving
+  i-cache density and branch-predictor quality for its callers. Apply it to
+  the **definition**, not just the declaration.  
+  Examples: `report_error`, `log_warning`, `fatal`, `die`, `oom_handler`,
+  any function that calls `fprintf(stderr, …)`, `exit`, `abort`, or `throw`.  
+  → `patterns/cold-path-annotation.md`
+
+---
+
 ## Quick reference by language
 
 | Concern | C | C++ | Inline asm |
@@ -115,3 +131,4 @@ Each item links to the full pattern file for rationale and code templates.
 | CPUID annotation | `/* CPUID: AVX2 */` comment | same | same |
 | Runtime dispatch | `__builtin_cpu_supports` / `target_clones` | same | same |
 | Cache line padding | `alignas(64)` (C11) | `alignas(64)` | — |
+| Cold function annotation | `__attribute__((cold))` | `[[gnu::cold]]` | — |

@@ -21,6 +21,7 @@ structure alone is a strong predictor of the performance problem.
 | Spinlock body is `while (!cmpxchg(&lock, ...))` with no prior read of the lock variable | Test-and-Set spinlock | `patterns/ttas.md` |
 | Struct fields written by different threads, no `alignas(64)` between them | False sharing | `patterns/false-sharing.md` |
 | Global `count++` / `atomic_inc` / `atomic_fetch_add` on a statistics field in a hot path | Shared statistics counter | `patterns/per-cpu-stats.md` |
+| Hot function calls error-reporters / rare-case handlers without `[[gnu::cold]]` or `__attribute__((cold))` | Cold-path annotation | `patterns/cold-path-annotation.md` |
 
 ---
 
@@ -134,3 +135,24 @@ updating threads. Field names are the strongest hint: `count`, `total`, `hits`,
 (if there is one, the TTAS pattern applies instead).
 
 Read `patterns/per-cpu-stats.md`.
+
+---
+
+### Cold-path annotation
+
+A hot function calls one or more functions that are only reached on rarely-taken
+branches — error reporters, impossible-state handlers, rare corner-case paths —
+and those callees are not marked `[[gnu::cold]]` or `__attribute__((cold))`.
+
+Without the annotation, the compiler interleaves the cold-path instructions with
+the hot-path instructions in the compiled output. This pollutes the instruction
+cache and generates suboptimal branch sequences for the hot path. The annotation
+tells the compiler the branch is almost never taken; it responds by emitting the
+cold code after the function's main return sequence, keeping the hot path tight.
+
+Recognizable by: a hot function whose body contains `if (error_condition)
+{ handle_error(...); }` or similar guards, where `handle_error` does logging,
+`fprintf(stderr, …)`, `exit`, `abort`, `throw`, or other error-only work, and
+carries no cold annotation.
+
+Read `patterns/cold-path-annotation.md`.
