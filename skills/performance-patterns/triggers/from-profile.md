@@ -20,6 +20,7 @@ the full diagnosis and fix.
 | `perf c2c` HITM > 5% on a line; different byte offsets written by different threads | False sharing | `patterns/false-sharing.md` |
 | `lock add` / `lock xadd` / `lock inc` in hot path; `perf c2c` true sharing on a stats/counter field | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot symbol's DSO column shows a `.so` file (not the application binary); symbol appears in `references/library-versions.md` | Library version upgrade | `patterns/library-version-upgrade.md` |
+| `crc32b`/`crc32q`/`pclmulqdq` instructions dominate a hot function; or a function named `crc32c`/`crc32_c`/`compute_crc32c` is prominent; single-accumulator CRC32 loop | Fast CRC32C | `patterns/fast-crc32c.md` |
 
 ---
 
@@ -116,6 +117,20 @@ grows linearly with thread count in the scaling profile, and field names suggest
 accounting (`count`, `total`, `hits`, `misses`, `bytes`, `errors`, `stat`).
 
 Read `patterns/per-cpu-stats.md`.
+
+### Fast CRC32C
+
+`perf report` or `perf annotate` shows `crc32b`, `crc32l`, or `crc32q`
+instructions dominating a hot function, or a `pclmulqdq`/`vpclmulqdq` chain
+with only one or two vector accumulators. A single-accumulator CRC32C loop is
+latency-bound at roughly 2.5 GB/s per GHz regardless of CPU clock speed or
+memory bandwidth — the bottleneck is instruction-level serialization, not data
+throughput. The function name itself (`crc32c`, `crc32_c`, `compute_crc32c`)
+is sufficient trigger even without inspecting the loop body.
+
+Read `patterns/fast-crc32c.md`.
+
+---
 
 ### Library version upgrade
 

@@ -121,6 +121,20 @@ Each item links to the full pattern file for rationale and code templates.
 
 ---
 
+### CRC32C
+
+- [ ] **Do not write a CRC32C function from scratch — use the pre-built
+  corsix fusion implementation.**  
+  Any new code that needs CRC32C should use the three-file dispatch provided
+  in `patterns/fast-crc32c-impl.md`. It selects the best available path at
+  runtime (AVX-512 fusion → SSE4.2 multi-accumulator → portable C) and is
+  6–40× faster than a naive single-accumulator loop.  
+  CRC32C is a standard checksum (iSCSI RFC 3720, Btrfs, ext4, PostgreSQL) —
+  this implementation does not change the checksum value.  
+  → `patterns/fast-crc32c.md`, `patterns/fast-crc32c-impl.md`
+
+---
+
 ## Quick reference by language
 
 | Concern | C | C++ | Inline asm |

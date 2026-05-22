@@ -11,7 +11,8 @@ description: >-
   reduction, dot product, or CPU-dispatched function. Patterns: serial
   accumulator, TTAS spinlock, SIMD upconversion (zipper), false sharing,
   per-CPU stats, missing vzeroupper, missing restrict, CPU dispatch,
-  library version upgrade.
+  library version upgrade, fast CRC32C (crc32c function name trigger,
+  single-accumulator _mm_crc32 loop, table-lookup CRC32C).
 ---
 
 <!-- (C) 2026 Intel Corporation, MIT license -->
@@ -65,3 +66,4 @@ if the capability is needed.
 |--------|-----------------|
 | `library/cpu-dispatch.md` | Runtime CPU feature detection and variant selection: `target_clones` (compiler-driven, plain C/C++) and `__builtin_cpu_supports` (hand-written variants). Use whenever a function has multiple performance-level implementations that need to be wired together at runtime. |
 | `patterns/simd-upconversion-impl.md` | Full step-by-step zipper algorithm for doubling vector register width in asm/intrinsics (SSE→AVX2 or AVX2→AVX-512); AVX-512 accumulator template; post-transformation checklist (CPUID guards, vzeroupper, clobber list). |
+| `patterns/fast-crc32c-impl.md` | Drop-in CRC32C library: AVX-512 VPCLMULQDQ fusion (corsix v3s1_s3, 64–97 GB/s), SSE4.2+PCLMULQDQ 3-accumulator (~15–25 GB/s), plain C fallback. Runtime CPU dispatch wrapper included. Use whenever new CRC32C code is needed or an existing implementation is the bottleneck. |

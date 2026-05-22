@@ -22,6 +22,7 @@ structure alone is a strong predictor of the performance problem.
 | Struct fields written by different threads, no `alignas(64)` between them | False sharing | `patterns/false-sharing.md` |
 | Global `count++` / `atomic_inc` / `atomic_fetch_add` on a statistics field in a hot path | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot function calls error-reporters / rare-case handlers without `[[gnu::cold]]` or `__attribute__((cold))` | Cold-path annotation | `patterns/cold-path-annotation.md` |
+| Function/loop named `crc32c` / `crc32_c` / `compute_crc32c`; single `_mm_crc32_u64` accumulator variable; byte-by-byte table-lookup CRC32C loop | Fast CRC32C | `patterns/fast-crc32c.md` |
 
 ---
 
@@ -135,6 +136,23 @@ updating threads. Field names are the strongest hint: `count`, `total`, `hits`,
 (if there is one, the TTAS pattern applies instead).
 
 Read `patterns/per-cpu-stats.md`.
+
+---
+
+### Fast CRC32C
+
+A function or loop that computes CRC32C using:
+
+- a single `_mm_crc32_u64` / `_mm_crc32_u32` accumulator variable (latency-bound),
+- a byte-by-byte or word-by-word table-lookup loop, or
+- a function whose name is `crc32c`, `crc32_c`, `calc_crc32c`, `hash_crc32c`,
+  or similar — the name alone strongly implies a suboptimal implementation.
+
+The function name is a distinctive trigger: if you see a function called
+`crc32c` in any performance-sensitive context, check whether it uses the
+corsix fusion implementation before looking at how it is called.
+
+Read `patterns/fast-crc32c.md`.
 
 ---
 
