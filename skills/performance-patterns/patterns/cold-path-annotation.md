@@ -154,6 +154,22 @@ Look at the `Taken%` column for branches whose target is the candidate callee.
 A `Taken%` below ~0.1% is strong evidence the callee is cold and the annotation
 is appropriate.  This step is optional but removes guesswork for borderline cases.
 
+**No workload available? Use GCC's static estimate as a proxy.**
+
+Recompile once with extra dump flags, then run `gccbranchprob.py`:
+
+```bash
+# recompile — inject these flags via your build system
+gcc -g -fdump-tree-profile_estimate-lineno -dumpdir dump/ ... foo.c
+
+python3 skills/linux-perf/tools/gccbranchprob.py foo.c dump/ process
+```
+
+Look at `GCC Est%`. A value near 0% means the compiler itself expects this
+branch to be almost never taken — a strong cold-path signal even without runtime
+data.  See the **GCC static branch probability** building block in `linux-perf`
+for full details.
+
 ### Confirm the annotation moved code out of the hot path
 
 Build with `-O2` (or `-O3`) and compare the generated assembly:

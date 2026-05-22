@@ -17,6 +17,7 @@ Read this file when executing any building block referenced from Part 2 flows.
 - [Dual-profile comparison](#building-block-dual-profile-comparison)
 - [Annotate pattern scan](#building-block-annotate-pattern-scan)
 - [Branch probability measurement](#building-block-branch-probability-measurement)
+- [GCC static branch probability](#building-block-gcc-static-branch-probability)
 
 ---
 
@@ -862,3 +863,124 @@ A branch with low `Taken%` (< ~0.1%) means execution almost never follows
 that path — the callee at the target line is a candidate for
 `[[gnu::cold]]`.  See `patterns/cold-path-annotation.md` in the
 `performance-patterns` skill.
+
+---
+
+## Building block: GCC static branch probability
+
+Report GCC's compile-time branch-probability estimates for a C/C++ source file. Use this when:
+- **No workload is available** to run `branchprob.py` — GCC's heuristics are a useful proxy
+- **Calibrating perf data** — divergences between GCC estimates and measured `Taken%` highlight optimization opportunities
+- **Cross-platform** — unlike the perf-based building block this works on any architecture GCC targets
+
+**Platform note:** GCC static estimates are available on any architecture. The Intel-specific PMU events used by `branchprob.py` are NOT required.
+
+### Manual procedure
+
+**Step 1 — Recompile with profile-estimate dump enabled**
+
+The agent should inject these extra flags into the project's build command. The exact mechanism is project-specific:
+
+| Build system | How to add flags |
+|---|---|
+| Plain `gcc`/`g++` | Append to the compile invocation |
+| `make` | `make CFLAGS="$CFLAGS -fdump-tree-profile_estimate-lineno -dumpdir dump/" ...` |
+| CMake | `cmake -DCMAKE_C_FLAGS="... -fdump-tree-profile_estimate-lineno -dumpdir dump/" ...` |
+| Meson | Add to `c_args` in `meson.build` or pass `--cflags-override` depending on project |
+| Custom build | Ask the user for the correct flag injection method |
+
+The flags to inject:
+```
+-g -fdump-tree-profile_estimate-lineno -dumpdir dump/
+```
+
+Create the dump directory first: `mkdir -p dump/`
+
+**Step 2 — Locate the dump file**
+
+After compilation:
+```bash
+ls dump/*.profile_estimate
+```
+
+The file is named `<source_basename>.<NNN>t.profile_estimate` where `NNN` is a GCC version-specific pass number. If multiple files match, the correct one has a name like `foo.c.053t.profile_estimate`.
+
+**Step 3 — Inspect a function**
+
+Open the dump file and search for the function. Each function section starts with:
+```
+;; Function function_name (function_name, ...)
+```
+
+Within each section, condition blocks show their outgoing edges with probabilities:
+```
+  [foo.c:11:8] if (_2 == 0)
+    goto <bb 3>; [50.00%]
+  else
+    goto <bb 5>; [50.00%]
+```
+
+The `[X.XX%]` is GCC's estimated probability for that edge. Near-zero percentages (< ~5%) indicate cold paths.
+
+**Step 4 — Interpret**
+
+Present results as a table (one row per conditional branch edge), sorted by probability ascending (coldest first):
+
+| GCC Est% | Source line | Target line |
+|---------:|------------:|------------:|
+|   0.00%  | :27         | :30         |
+|  33.00%  | :13         | :14         |
+|  50.00%  | :11         | :12         |
+
+A `GCC Est%` near 0% means the compiler predicts the target line is almost never reached. The callee at that line is a `[[gnu::cold]]` candidate.
+
+If GCC estimates disagree significantly with `branchprob.py`'s `Taken%`:
+- **GCC hot / perf cold** → GCC was wrong; annotating `[[gnu::cold]]` would be a meaningful win
+- **GCC cold / perf hot** → may need `[[gnu::hot]]`; profile first
+- **GCC ~50-50 / perf strongly skewed** → data-dependent behaviour GCC cannot see statically
+
+---
+
+### Automated procedure
+
+`tools/gccbranchprob.py` automates Steps 2–4. Its output goes to **stdout** for
+direct agent ingestion. Progress messages go to stderr.
+
+**Basic usage:**
+
+```bash
+python3 tools/gccbranchprob.py <source.c> <dump_dir>
+```
+
+**Focused on specific functions** (recommended when you already know which functions are hot):
+
+```bash
+python3 tools/gccbranchprob.py foo.c dump/ process_data compute_hash
+```
+
+Only branches inside `process_data` and `compute_hash` are reported.
+
+**Substring matching** (for overloaded or versioned names):
+
+```bash
+python3 tools/gccbranchprob.py foo.c dump/ --fuzzy process
+# matches: process_data, process_request, process_v2, ...
+```
+
+**Options summary:**
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `[function ...]` | (all) | Restrict output to named functions |
+| `--fuzzy` | off | Substring function-name matching |
+
+**Interpreting the output:**
+
+The script reports one section per function. Within each section, branches are
+sorted by `(condition_line, target_line)`. `GCC Est%` is the compiler's estimate
+of how often execution follows that edge. `Source line` is the `if (...)` line;
+`Target line` is the first line of the basic block reached when the branch fires.
+
+A `GCC Est%` of 0% or near-0% means the compiler expects the path is almost
+never taken — the callee at the target line is a candidate for `[[gnu::cold]]`.
+See `patterns/cold-path-annotation.md` in the `performance-patterns` skill.

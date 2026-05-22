@@ -209,6 +209,7 @@ Detailed command syntax, flags, and output formats for each primitive. Read
 | `Dual-profile comparison` | Run top-15 at 1 core and at N cores; produce delta table of rank/% changes to identify scaling bottleneck candidates |
 | `Annotate pattern scan` | Scan `perf annotate` output for a function and return a structured table of detected anti-patterns (scalar FP, narrow SIMD, serial accumulator, horizontal reduction, lock CAS, memory load pressure) with suggested resolution strategies |
 | `Branch probability measurement` | Measure per-branch taken-probabilities in hot functions using Intel PMU events; identify near-zero-probability branches as `[[gnu::cold]]` candidates |
+| `GCC static branch probability` | Parse GCC's compile-time profile_estimate dump to obtain static branch-probability estimates; works on any platform; use as a proxy when no workload is available, or compare against perf data to find divergences worth optimizing |
 
 # Part 5: resolution strategies
 
