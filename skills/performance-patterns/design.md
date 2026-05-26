@@ -151,10 +151,18 @@ Name the file after the technique, not the pattern: `cpu-dispatch.md` not
 `simd-dispatch.md`. Add it to the table above and reference it from the relevant
 pattern files.
 
----
+### Current references
 
+| File | Purpose |
+|------|---------|
+| `references/library-versions.md` | Known library symbols with a newer high-performance version; used by the library-version-upgrade pattern |
+| `references/known-algorithms.md` | Table of algorithm names → common function names, with per-algorithm ISA levels and optimization notes; grows by adding rows |
 
-### `linux-perf`
+### Adding a reference file
+
+Create a reference file when data needs to grow independently of pattern
+logic — versioned library lists, algorithm catalogs, CPU feature tables.
+Name the file after what it indexes, not the pattern that reads it.
 
 `linux-perf` owns data collection and hotspot identification. When it identifies
 a known pattern, it invokes `performance-patterns`. The `linux-perf` resolution

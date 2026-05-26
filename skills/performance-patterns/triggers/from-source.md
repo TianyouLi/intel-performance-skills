@@ -22,6 +22,7 @@ structure alone is a strong predictor of the performance problem.
 | Struct fields written by different threads, no `alignas(64)` between them | False sharing | `patterns/false-sharing.md` |
 | Global `count++` / `atomic_inc` / `atomic_fetch_add` on a statistics field in a hot path | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot function calls error-reporters / rare-case handlers without `[[gnu::cold]]` or `__attribute__((cold))` | Cold-path annotation | `patterns/cold-path-annotation.md` |
+| Function/loop named or described as a known algorithm (`hamming_distance`, `hamming_dist`, `hamming`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
 | Function/loop named `crc32c` / `crc32_c` / `compute_crc32c`; single `_mm_crc32_u64` accumulator variable; byte-by-byte table-lookup CRC32C loop | Fast CRC32C | `patterns/fast-crc32c.md` |
 
 ---
@@ -136,6 +137,18 @@ updating threads. Field names are the strongest hint: `count`, `total`, `hits`,
 (if there is one, the TTAS pattern applies instead).
 
 Read `patterns/per-cpu-stats.md`.
+
+---
+
+### Known algorithm — optimized SIMD replacement available
+
+A function whose name or comment indicates it implements an algorithm listed
+in `references/known-algorithms.md` (e.g., `hamming_distance`, `hamming_dist`).
+The implementation may be correct but scalar, or use a narrower SIMD width
+than the CPU supports. The function name is sufficient trigger — inspect the
+body only to confirm ISA level choices.
+
+Read `references/known-algorithms.md`.
 
 ---
 

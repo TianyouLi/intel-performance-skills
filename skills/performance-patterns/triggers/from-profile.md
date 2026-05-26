@@ -21,6 +21,7 @@ the full diagnosis and fix.
 | `lock add` / `lock xadd` / `lock inc` in hot path; `perf c2c` true sharing on a stats/counter field | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot symbol's DSO column shows a `.so` file (not the application binary); symbol appears in `references/library-versions.md` | Library version upgrade | `patterns/library-version-upgrade.md` |
 | `crc32b`/`crc32q`/`pclmulqdq` instructions dominate a hot function; or a function named `crc32c`/`crc32_c`/`compute_crc32c` is prominent; single-accumulator CRC32 loop | Fast CRC32C | `patterns/fast-crc32c.md` |
+| Hot function name matches a known algorithm (`hamming_distance`, `hamming_dist`, `hamming`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
 
 ---
 
@@ -129,6 +130,19 @@ throughput. The function name itself (`crc32c`, `crc32_c`, `compute_crc32c`)
 is sufficient trigger even without inspecting the loop body.
 
 Read `patterns/fast-crc32c.md`.
+
+---
+
+### Known algorithm — optimized SIMD replacement available
+
+`perf report` shows a function whose name matches a well-known algorithm in
+`references/known-algorithms.md` (e.g., `hamming_distance`, `hamming_dist`).
+These algorithms have established vectorized implementations that the agent
+can generate directly. Identify the ISA levels supported by the target CPU
+(check `/proc/cpuinfo`), then read the algorithm's entry for the dispatch
+strategy and implementation notes.
+
+Read `references/known-algorithms.md`.
 
 ---
 

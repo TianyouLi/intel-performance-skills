@@ -12,7 +12,8 @@ description: >-
   accumulator, TTAS spinlock, SIMD upconversion (zipper), false sharing,
   per-CPU stats, missing vzeroupper, missing restrict, CPU dispatch,
   library version upgrade, fast CRC32C (crc32c function name trigger,
-  single-accumulator _mm_crc32 loop, table-lookup CRC32C).
+  single-accumulator _mm_crc32 loop, table-lookup CRC32C), known algorithms
+  with built-in vectorized implementations (Hamming Distance, …).
 ---
 
 <!-- (C) 2026 Intel Corporation, MIT license -->
