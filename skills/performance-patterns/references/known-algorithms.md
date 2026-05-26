@@ -22,7 +22,59 @@ For all cases, use `library/cpu-dispatch.md` for the runtime dispatch wrapper.
 
 | Algorithm | Common function names in code |
 |-----------|-------------------------------|
+| Cosine Similarity | `cosine_similarity`, `cosine_sim`, `cos_sim`, `cosine_distance`, `angular_similarity`, `dot_normalized` |
 | Hamming Distance | `hamming_distance`, `hamming_dist`, `hamming`, `count_differing_bits`, `bit_diff_count`, `popcount_xor` |
+
+---
+
+## Cosine Similarity
+
+**What it computes:** The cosine of the angle between two vectors:
+`cos(θ) = dot(A, B) / (|A| * |B|)`, where `dot(A,B) = Σ a[i]*b[i]` and
+`|A| = sqrt(Σ a[i]²)`. Returns 1.0 for identical direction, 0.0 for
+orthogonal, −1.0 for opposite. Widely used in ML embeddings, NLP, and
+recommendation systems.
+
+**Why scalar is slow:** Three serial accumulator loops (dot product, two norms)
+each have loop-carried FP dependencies. A naive implementation makes three
+passes over the data; a smart one makes a single pass but still serializes
+on one accumulator. Modern CPUs support FMA (fused multiply-add) and can
+process 8–16 floats per cycle with AVX2/AVX-512.
+
+**Key insight — single-pass, multi-accumulator:** Compute `dot_ab`, `dot_aa`,
+and `dot_bb` in one loop with independent SIMD accumulators for each. Combine
+at the end: `result = dot_ab / sqrt(dot_aa * dot_bb)`. This reads each array
+once and exploits instruction-level parallelism across the three FMA streams.
+
+**ISA levels and approach:**
+
+| ISA level | Technique |
+|-----------|-----------|
+| FMA (baseline) | 4 independent `float` accumulators per stream; `fmaf(a[i], b[i], dot_ab)` etc.; combine with `sqrtf` |
+| AVX2 + FMA | `_mm256_fmadd_ps` (8 floats/iter), 4 accumulators per stream (12 YMM registers total); horizontal reduce with `_mm256_hadd_ps` at the end |
+| AVX-512 + FMA | `_mm512_fmadd_ps` (16 floats/iter), 4 accumulators per stream; reduce with `_mm512_reduce_add_ps` |
+
+**Dispatch guards:**
+```c
+/* CPUID: AVX512F */
+if (__builtin_cpu_supports("avx512f"))  → AVX-512 path
+/* CPUID: AVX2,FMA */
+else if (__builtin_cpu_supports("avx2") &&
+         __builtin_cpu_supports("fma")) → AVX2+FMA path
+/* CPUID: FMA */
+else if (__builtin_cpu_supports("fma")) → scalar FMA path
+else                                    → scalar fallback
+```
+
+**Key implementation notes:**
+- Pre-normalized inputs (`|A| = |B| = 1`) reduce to a plain dot product —
+  detect this case and skip the norm computation.
+- Guard against division by zero: if `dot_aa * dot_bb < epsilon`, return 0.
+- FP associativity: multi-accumulator results may differ from a serial sum by
+  rounding ε; document this at the function boundary.
+- All paths need a scalar tail for `n % vector_width` remaining elements.
+- The final `sqrt` and division are a negligible fraction of runtime for
+  any array longer than ~16 elements; optimize the loop, not the epilogue.
 
 ---
 
