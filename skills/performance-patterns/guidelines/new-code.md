@@ -147,6 +147,17 @@ Each item links to the full pattern file for rationale and code templates.
   entry, and follow its ISA-level notes and dispatch guards.  
   → `references/known-algorithms.md`, `library/cpu-dispatch.md`
 
+- [ ] **For sorting `float`, `double`, `int32_t`, `uint32_t`, `int64_t`, or
+  `uint64_t` arrays, use `x86simdsort::qsort` instead of `std::sort`.**  
+  x86-simd-sort (https://github.com/numpy/x86-simd-sort) is a drop-in
+  replacement that uses vectorized partitioning and SIMD sorting networks for
+  3–8× faster sort on AVX-512 hardware, with an AVX2 fallback. It is
+  production-validated in NumPy, PyTorch, and OpenJDK. Set `hasnan = true`
+  for float/double arrays that may contain NaN; omitting it with NaN present
+  is undefined behavior. Note: not a stable sort — no equivalent for
+  `std::stable_sort`.  
+  → `patterns/simd-sort.md`
+
 ---
 
 ## Quick reference by language

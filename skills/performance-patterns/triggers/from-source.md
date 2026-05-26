@@ -23,6 +23,7 @@ structure alone is a strong predictor of the performance problem.
 | Global `count++` / `atomic_inc` / `atomic_fetch_add` on a statistics field in a hot path | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot function calls error-reporters / rare-case handlers without `[[gnu::cold]]` or `__attribute__((cold))` | Cold-path annotation | `patterns/cold-path-annotation.md` |
 | Function/loop named or described as a known algorithm (`hamming_distance`, `hamming_dist`, `cosine_similarity`, `cosine_sim`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
+| `std::sort`, `std::nth_element`, `std::partial_sort`, or `qsort` called on `float` / `double` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t` arrays | SIMD sort | `patterns/simd-sort.md` |
 | Function/loop named `crc32c` / `crc32_c` / `compute_crc32c`; single `_mm_crc32_u64` accumulator variable; byte-by-byte table-lookup CRC32C loop | Fast CRC32C | `patterns/fast-crc32c.md` |
 
 ---
@@ -137,6 +138,20 @@ updating threads. Field names are the strongest hint: `count`, `total`, `hits`,
 (if there is one, the TTAS pattern applies instead).
 
 Read `patterns/per-cpu-stats.md`.
+
+---
+
+### SIMD sort
+
+`std::sort`, `std::nth_element`, `std::partial_sort`, or C-style `qsort`
+called on an array or `std::vector` of `float`, `double`, `int32_t`,
+`uint32_t`, `int64_t`, or `uint64_t`. The data type is the key signal —
+these are the types for which x86-simd-sort provides a drop-in AVX-512/AVX2
+accelerated replacement. A hand-written quicksort or merge sort over numeric
+primitives is an equally strong trigger. Check whether `std::stable_sort` is
+in use before recommending a replacement (no stable-sort equivalent exists).
+
+Read `patterns/simd-sort.md`.
 
 ---
 

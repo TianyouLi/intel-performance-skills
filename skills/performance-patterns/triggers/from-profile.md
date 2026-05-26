@@ -22,6 +22,7 @@ the full diagnosis and fix.
 | Hot symbol's DSO column shows a `.so` file (not the application binary); symbol appears in `references/library-versions.md` | Library version upgrade | `patterns/library-version-upgrade.md` |
 | `crc32b`/`crc32q`/`pclmulqdq` instructions dominate a hot function; or a function named `crc32c`/`crc32_c`/`compute_crc32c` is prominent; single-accumulator CRC32 loop | Fast CRC32C | `patterns/fast-crc32c.md` |
 | Hot function name matches a known algorithm (`hamming_distance`, `hamming_dist`, `cosine_similarity`, `cosine_sim`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
+| `std::sort`, `_introsort_loop`, `__gnu_cxx::__ops` hot in profile; data type is `float`, `double`, `int32_t`, `uint32_t`, `int64_t`, or `uint64_t` | SIMD sort | `patterns/simd-sort.md` |
 
 ---
 
@@ -130,6 +131,21 @@ throughput. The function name itself (`crc32c`, `crc32_c`, `compute_crc32c`)
 is sufficient trigger even without inspecting the loop body.
 
 Read `patterns/fast-crc32c.md`.
+
+---
+
+### SIMD sort
+
+`perf report` shows `std::sort`, `_introsort_loop`, `__gnu_cxx::__ops`,
+`std::__introsort_loop`, or `std::__sort` among the hottest symbols, and the
+sorted data type is a numeric primitive (`float`, `double`, `int32_t`,
+`uint32_t`, `int64_t`, `uint64_t`). `perf stat` may also show elevated
+`branch-misses` — the comparator-driven branches of introsort are notoriously
+hard for the branch predictor. The bottleneck is comparison and partitioning
+overhead, not memory bandwidth; replacing with x86-simd-sort gives 3–8×
+speedup by vectorizing both steps with AVX-512/AVX2.
+
+Read `patterns/simd-sort.md`.
 
 ---
 
