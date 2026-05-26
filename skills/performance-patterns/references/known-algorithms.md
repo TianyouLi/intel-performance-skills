@@ -24,6 +24,7 @@ For all cases, use `library/cpu-dispatch.md` for the runtime dispatch wrapper.
 |-----------|-------------------------------|
 | Cosine Similarity | `cosine_similarity`, `cosine_sim`, `cos_sim`, `cosine_distance`, `angular_similarity`, `dot_normalized` |
 | Hamming Distance | `hamming_distance`, `hamming_dist`, `hamming`, `count_differing_bits`, `bit_diff_count`, `popcount_xor` |
+| Jaccard Distance | `jaccard_distance`, `jaccard_similarity`, `jaccard_sim`, `jaccard_index`, `jaccard_coeff`, `iou` |
 
 ---
 
@@ -116,3 +117,54 @@ else                                            → scalar fallback
 - `__builtin_popcountll` compiles to a single `popcnt` instruction with `-mpopcnt`
   or `-march=native`; do not implement popcount manually.
 - Accumulate partial 64-bit sums to avoid overflow when processing large arrays.
+
+---
+
+## Jaccard Distance
+
+**What it computes:** For two bit vectors A and B:
+`Jaccard similarity = popcount(A AND B) / popcount(A OR B)`;
+`Jaccard distance = 1 - similarity`. Measures set overlap — 0 means identical,
+1 means disjoint. Also known as intersection-over-union (`iou`) in image/ML
+contexts.
+
+**Why scalar is slow:** A naive loop computes `AND` and `OR` popcount with two
+separate accumulators, one byte or word at a time, with the same loop-carried
+dependency problem as Hamming Distance. The key insight is that `AND` and `OR`
+are independent operations on the same two input words — they can be computed
+in a single pass through the data with interleaved SIMD operations, costing no
+extra memory bandwidth compared to Hamming Distance.
+
+**Single-pass trick:** If `popcount(A)` and `popcount(B)` are already known
+(e.g., stored alongside the vectors), the union can be derived without `OR`:
+`popcount(A OR B) = popcount(A) + popcount(B) - popcount(A AND B)`. This
+reduces the loop to a single `AND` + popcount, halving the work.
+
+**ISA levels and approach:**
+
+| ISA level | Technique |
+|-----------|-----------|
+| POPCNT (baseline) | 8-byte chunks: `__builtin_popcountll(a & b)` and `__builtin_popcountll(a \| b)`; 4 independent accumulators per stream |
+| AVX2 | `_mm256_and_si256` + `_mm256_or_si256` (32 bytes/iter); Harley-Seal bit-sliced popcount on both results in the same loop |
+| AVX-512VPOPCNTDQ | `_mm512_and_si512` + `_mm512_or_si512` + `_mm512_popcnt_epi8` on both (64 bytes/iter); reduce with `_mm512_reduce_add_epi64` |
+
+**Dispatch guards:** identical to Hamming Distance (same ISA requirements):
+```c
+/* CPUID: AVX512VPOPCNTDQ */
+if (__builtin_cpu_supports("avx512vpopcntdq")) → AVX-512 path
+/* CPUID: AVX2 */
+else if (__builtin_cpu_supports("avx2"))        → AVX2 path
+/* CPUID: POPCNT */
+else if (__builtin_cpu_supports("popcnt"))      → POPCNT path
+else                                            → scalar fallback
+```
+
+**Key implementation notes:**
+- Guard against division by zero: if `popcount(A OR B) == 0` both vectors are
+  all-zero; return similarity 1.0 (or distance 0.0) by convention.
+- The final division is one `float` operation on two accumulated `uint64_t`
+  values — negligible cost; optimize the loop, not the epilogue.
+- All paths need a scalar tail for `n % vector_width` remaining bytes.
+- For the AVX2 path, Harley-Seal processes both AND and OR accumulators in the
+  same loop body — the two streams share the same loop counter and scalar tail.
+- Accumulate partial 64-bit sums to avoid overflow for arrays longer than ~4 GB.

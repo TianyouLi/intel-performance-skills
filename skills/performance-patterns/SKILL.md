@@ -13,7 +13,7 @@ description: >-
   per-CPU stats, missing vzeroupper, missing restrict, CPU dispatch,
   library version upgrade, fast CRC32C (crc32c function name trigger,
   single-accumulator _mm_crc32 loop, table-lookup CRC32C), known algorithms
-  (Cosine Similarity, Hamming Distance), SIMD sort for numeric primitives
+  (Cosine Similarity, Hamming Distance, Jaccard Distance), SIMD sort for numeric primitives
   (float/double/int32_t/uint32_t/int64_t/uint64_t via x86-simd-sort).
 ---
 
