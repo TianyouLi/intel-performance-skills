@@ -137,15 +137,17 @@ Each item links to the full pattern file for rationale and code templates.
 
 ### Known algorithms
 
-- [ ] **If the algorithm you are implementing appears in
-  `references/known-algorithms.md`, generate the vectorized SIMD version
-  with multi-width dispatch directly — do not write a scalar first.**  
+- [ ] **If the algorithm you are implementing is in the known-algorithms table,
+  generate the vectorized SIMD version with multi-width dispatch directly —
+  do not write a scalar first.**  
   The table lists algorithms for which a fully-optimized implementation is
   well-established practice. Writing a scalar version and then optimizing it
-  later doubles the work and risks shipping the slow version. Check the
-  table at the start of any new algorithmic function, identify the matching
-  entry, and follow its ISA-level notes and dispatch guards.  
-  → `references/known-algorithms.md`, `library/cpu-dispatch.md`
+  later doubles the work and risks shipping the slow version. Check
+  `references/known-algorithms.md` (compact name index) at the start of any
+  new algorithmic function; if it matches, read
+  `references/known-algorithms-impl.md` for ISA-level notes and dispatch
+  guards.  
+  → `references/known-algorithms.md`, `references/known-algorithms-impl.md`, `library/cpu-dispatch.md`
 
 - [ ] **For sorting `float`, `double`, `int32_t`, `uint32_t`, `int64_t`, or
   `uint64_t` arrays, use `x86simdsort::qsort` instead of `std::sort`.**  

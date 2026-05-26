@@ -21,8 +21,8 @@ the full diagnosis and fix.
 | `lock add` / `lock xadd` / `lock inc` in hot path; `perf c2c` true sharing on a stats/counter field | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot symbol's DSO column shows a `.so` file (not the application binary); symbol appears in `references/library-versions.md` | Library version upgrade | `patterns/library-version-upgrade.md` |
 | `crc32b`/`crc32q`/`pclmulqdq` instructions dominate a hot function; or a function named `crc32c`/`crc32_c`/`compute_crc32c` is prominent; single-accumulator CRC32 loop | Fast CRC32C | `patterns/fast-crc32c.md` |
-| Hot function name matches a known algorithm (`hamming_distance`, `hamming_dist`, `cosine_similarity`, `jaccard_distance`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
 | `futex_wake`, `try_to_wake_up`, `__pthread_cond_broadcast` hot; context-switch rate scales with thread count; IPC collapse with high CPU utilization | CV thundering herd | `patterns/cv-thundering-herd.md` |
+| Hot function name matches a known algorithm (`hamming_distance`, `hamming_dist`, `cosine_similarity`, `jaccard_distance`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms-impl.md` |
 | `std::sort`, `_introsort_loop`, `__gnu_cxx::__ops` hot in profile; data type is `float`, `double`, `int32_t`, `uint32_t`, `int64_t`, or `uint64_t` | SIMD sort | `patterns/simd-sort.md` |
 
 ---
@@ -153,13 +153,20 @@ Read `patterns/simd-sort.md`.
 ### Known algorithm — optimized SIMD replacement available
 
 `perf report` shows a function whose name matches a well-known algorithm in
-`references/known-algorithms.md` (e.g., `hamming_distance`, `hamming_dist`).
-These algorithms have established vectorized implementations that the agent
-can generate directly. Identify the ISA levels supported by the target CPU
-(check `/proc/cpuinfo`), then read the algorithm's entry for the dispatch
-strategy and implementation notes.
+the table below. These algorithms have established vectorized implementations
+that the agent can generate directly. Identify the ISA levels supported by
+the target CPU (check `/proc/cpuinfo`), then read the algorithm's entry for
+the dispatch strategy and implementation notes.
 
-Read `references/known-algorithms.md`.
+| Algorithm | Common function names in code |
+|-----------|-------------------------------|
+| Cosine Similarity | `cosine_similarity`, `cosine_sim`, `cos_sim`, `cosine_distance`, `angular_similarity`, `dot_normalized` |
+| Hamming Distance | `hamming_distance`, `hamming_dist`, `hamming`, `count_differing_bits`, `bit_diff_count`, `popcount_xor` |
+| Jaccard Distance | `jaccard_distance`, `jaccard_similarity`, `jaccard_sim`, `jaccard_index`, `jaccard_coeff`, `iou` |
+
+If a function name from the table is present in the profile, read
+`references/known-algorithms-impl.md` for the ISA levels, dispatch guards, and
+implementation notes. Do not load it otherwise.
 
 ---
 

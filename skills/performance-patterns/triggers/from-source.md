@@ -23,7 +23,7 @@ structure alone is a strong predictor of the performance problem.
 | Global `count++` / `atomic_inc` / `atomic_fetch_add` on a statistics field in a hot path | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot function calls error-reporters / rare-case handlers without `[[gnu::cold]]` or `__attribute__((cold))` | Cold-path annotation | `patterns/cold-path-annotation.md` |
 | `pthread_cond_broadcast` / `cv.notify_all()` waking a thread pool; `notify_one()` in a loop waking N threads; dispatcher wakes all threads regardless of job count | CV thundering herd | `patterns/cv-thundering-herd.md` |
-| Function/loop named or described as a known algorithm (`hamming_distance`, `cosine_similarity`, `jaccard_distance`, `iou`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
+| Function/loop named or described as a known algorithm (`hamming_distance`, `cosine_similarity`, `jaccard_distance`, `iou`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms-impl.md` |
 | `std::sort`, `std::nth_element`, `std::partial_sort`, or `qsort` called on `float` / `double` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t` arrays | SIMD sort | `patterns/simd-sort.md` |
 | Function/loop named `crc32c` / `crc32_c` / `compute_crc32c`; single `_mm_crc32_u64` accumulator variable; byte-by-byte table-lookup CRC32C loop | Fast CRC32C | `patterns/fast-crc32c.md` |
 
@@ -173,13 +173,20 @@ Read `patterns/cv-thundering-herd.md`.
 
 ### Known algorithm — optimized SIMD replacement available
 
-A function whose name or comment indicates it implements an algorithm listed
-in `references/known-algorithms.md` (e.g., `hamming_distance`, `hamming_dist`).
-The implementation may be correct but scalar, or use a narrower SIMD width
-than the CPU supports. The function name is sufficient trigger — inspect the
-body only to confirm ISA level choices.
+A function whose name matches any entry in the table below. The implementation
+may be correct but scalar, or use a narrower SIMD width than the CPU supports.
+The function name is sufficient trigger — inspect the body only to confirm ISA
+level choices.
 
-Read `references/known-algorithms.md`.
+| Algorithm | Common function names in code |
+|-----------|-------------------------------|
+| Cosine Similarity | `cosine_similarity`, `cosine_sim`, `cos_sim`, `cosine_distance`, `angular_similarity`, `dot_normalized` |
+| Hamming Distance | `hamming_distance`, `hamming_dist`, `hamming`, `count_differing_bits`, `bit_diff_count`, `popcount_xor` |
+| Jaccard Distance | `jaccard_distance`, `jaccard_similarity`, `jaccard_sim`, `jaccard_index`, `jaccard_coeff`, `iou` |
+
+If a function name from the table is present in the code being reviewed, read
+`references/known-algorithms-impl.md` for the ISA levels, dispatch guards, and
+implementation notes. Do not load it otherwise.
 
 ---
 
