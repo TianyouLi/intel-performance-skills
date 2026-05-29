@@ -33,6 +33,8 @@ loops. Two doublings (scalar → xmm → ymm → zmm) can yield up to 8×.
 | **CPU feature check** | AVX2 required for `ymm`; AVX-512 required for `zmm`. Check `/proc/cpuinfo` flags (`avx2`, `avx512f`): `grep -m1 flags /proc/cpuinfo \| tr ' ' '\n' \| grep avx`. |
 | **Memory-bandwidth-bound loops** | If the loop is already limited by DRAM bandwidth, wider vectors process more data per cycle but hit the same wall. The gain is real but smaller than the theoretical 2×. Check with `perf stat -e cycles,cache-misses,mem-loads`. |
 | **Latency-bound loops (serial accumulator)** | Dependency chains between iterations are not helped by wider vectors alone. Apply the **parallel accumulator** pattern (`patterns/parallel-accumulator.md`) first, then consider width upconversion — `performance-patterns` can apply both together. |
+| **AVX-512 frequency throttling** | On many Intel CPUs, executing ZMM instructions triggers a core frequency downclocking that can partially or fully offset the throughput gain from doubling lanes. Verify sustained frequency with `perf stat -e cpu-clock` or `turbostat` before and after widening. If frequency drops significantly on a workload that is not heavily compute-bound, AVX2 (YMM) may deliver better real-world throughput. This caveat applies only to the YMM -> ZMM step |
+| **Numerical accuracy** | Widening changes the order in which floating-point operations are evaluated. FP results can differ from the original by up to 1 ULP; bit-exact test suites need their reference values regenerated after widening. Integer loops are unaffected by FP rounding but must be checked for sign/unsigned semantics — see [Step 7: consolidation step 2 (vector)](simd-upconversion-impl.md#step-7-consolidation-step-2-vector) in `patterns/simd-upconversion-impl.md`. |
 
 ### Checking for memory-bandwidth saturation
 
@@ -53,13 +55,38 @@ Key indicators of bandwidth saturation:
 - Clearly bandwidth-saturated → advise that reducing working-set size or improving
   cache locality may yield more, then proceed if user agrees
 
+### Numerical accuracy
+
+Widening introduces two distinct sources of floating-point result differences:
+
+**1. Operation reordering (associativity)**
+Doubling the lane count changes which elements are grouped together per iteration.
+Because FP addition is not associative — `(a + b) + c != a + (b + c)` in general —
+the widened loop produces results that differ from the original by rounding (ε).
+This is not a logic error, but it breaks bit-exact reproducibility against a scalar
+or narrower reference.
+
+**2. FMA fusion during consolidation**
+[Step 7](simd-upconversion-impl.md#step-7-consolidation-step-2-vector) of the zipper algorithm merges paired vector operations. When a `vmulps` and
+a `vaddps` are adjacent and paired, consolidate them into a `vfmadd*` instruction.
+FMA computes `a×b + c` with a **single** rounding step instead of two — faster and
+more accurate. The result differs from the original separate multiply-then-add by at
+most 1 ULP.
+
+**How to handle accuracy differences**
+
+| Scenario | What to do |
+|---|---|
+| FP reordering (all loops) | Regenerate reference test vectors from the widened code; 1 ULP differences are not logic errors |
+| Integer sign/unsigned semantics | See [Step 7: consolidation step 2 (vector)](simd-upconversion-impl.md#step-7-consolidation-step-2-vector) in `patterns/simd-upconversion-impl.md` |
+
 ---
 
 ## Why this is fast
 
 Vector units on modern x86 CPUs issue one operation per cycle regardless of
 register width. A `ymm` add processes 8 `float` values in the same time a scalar
-`addss` processes one. Two doublings (128→256→512 bit) give up to 4× and 8×
+`addss` processes one. Two doublings (128->256->512 bit) give up to 4x and 8x
 speedup respectively on compute-bound code.
 
 ---
@@ -70,7 +97,7 @@ Read `patterns/simd-upconversion-impl.md` for the step-by-step procedure.
 That file contains:
 
 - **Capability 1** — The systematic 10-step zipper algorithm for widening
-  existing asm or intrinsics (SSE→AVX2 or AVX2→AVX-512), including loop
+  existing asm or intrinsics (SSE->AVX2 or AVX2->AVX-512), including loop
   replication, register reallocation, the zipper interleaving step, and
   vector/integer consolidation.
 - **Capability 2** — AVX-512 extension of the parallel accumulator template;
@@ -94,8 +121,17 @@ That file contains:
 2. Confirm the target CPU supports the wider width.
 3. Check for memory-bandwidth saturation (see above) and decide whether to
    proceed automatically or prompt the user.
-4. Read `patterns/simd-upconversion-impl.md` and apply the appropriate capability.
-5. Run the post-transformation checklist from that file before presenting results.
+4. For YMM→ZMM widening, note the AVX-512 frequency throttling caveat above and
+   verify sustained frequency after the change.
+5. Read `patterns/simd-upconversion-impl.md` and apply the appropriate capability.
+   Pay particular attention to:
+   - [Step 2: loop replication](simd-upconversion-impl.md#step-2-loop-replication): tail handling and out-of-bounds risk when doubling the minimum iteration count.
+   - [Step 7: consolidation step 2 (vector)](simd-upconversion-impl.md#step-7-consolidation-step-2-vector): FMA fusion, sign/unsigned integer semantics, and lane-crossing shuffle behavior.
+   - [Scalar tail handling](simd-upconversion-impl.md#scalar-tail-handling): whether to keep a scalar tail, promote an existing XMM tail to the fallback loop, or use AVX-512 masked loads/stores to eliminate the scalar tail entirely.
+6. Add `restrict` to pointer parameters in C functions if not already present —
+   this eliminates runtime alias checks that survive widening. See
+   `patterns/missing-restrict.md` (C only; use `__restrict__` for C++).
+7. Run the post-transformation checklist from that file before presenting results.
 
 ---
 
@@ -103,8 +139,11 @@ That file contains:
 
 After applying the fix:
 
-1. **Correctness** — run on reference inputs and compare outputs (FP rounding
-   may change by ε; results should be functionally identical).
+1. **Correctness** — run on reference inputs and compare outputs. FP results may
+   differ by rounding (ε) due to operation reordering and FMA fusion (see
+   Numerical accuracy section above); this is expected. Differences larger than ε
+   indicate a logic error in the transformation. For integer loops, verify that
+   signed/unsigned semantics are preserved (see [Step 7: consolidation step 2 (vector)](simd-upconversion-impl.md#step-7-consolidation-step-2-vector) in `patterns/simd-upconversion-impl.md`).
 2. **CPUID guards** — verify or generate the correct CPUID comment and
    `__builtin_cpu_supports` guard on the widened code. If the `cpuid-check`
    skill is available, invoke it; otherwise verify manually using the

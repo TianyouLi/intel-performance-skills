@@ -10,9 +10,10 @@ upconversion opportunity has been identified.
 ## Table of contents
 
 1. [Capability 1: Zipper algorithm (asm/intrinsics widening)](#capability-1-zipper-algorithm)
-2. [Capability 2: Vector-sequential optimization (serial accumulator)](#capability-2-vector-sequential-optimization)
-3. [Post-transformation checklist](#post-transformation-checklist)
-4. [Swap rules for the zipper step](#rules-for-swapping-two-assembly-instructions)
+2. [Scalar tail handling](#scalar-tail-handling)
+3. [Capability 2: Vector-sequential optimization (serial accumulator)](#capability-2-vector-sequential-optimization)
+4. [Post-transformation checklist](#post-transformation-checklist)
+5. [Swap rules for the zipper step](#rules-for-swapping-two-assembly-instructions)
 
 ---
 
@@ -24,7 +25,7 @@ supports (XMM→YMM or YMM→ZMM).
 Two notes before starting:
 
 - **SSE→AVX preparation**: if the input uses non-VEX SSE instructions (e.g.
-  `ADDPS`, `MOVUPS` without the `V` prefix), apply Step 1 (VEX conversion) first.
+  `ADDPS`, `MOVUPS` without the `V` prefix), apply [Step 1: Preparation](#step-1-preparation) (VEX conversion) first.
   This is a prerequisite, not a separate first-class capability.
 - **Abort condition**: if any step cannot be completed (a swap is illegal, a
   register cannot be merged), abandon the transformation and explain which step
@@ -124,6 +125,26 @@ is preserved unchanged through Steps 3–7 and becomes the narrower-width fallba
 loop once the algorithm completes. Its pre-loop condition check will fail when fewer
 elements remain than the original width, causing fall-through to tail handling.
 
+**Out-of-bounds risk.** Each widening step doubles the minimum element count
+required for one full vector iteration. SSE→AVX2 raises the minimum from 4 to 8
+floats; AVX2->AVX-512 raises it from 8 to 16. If [Step 2: loop replication](#step-2-loop-replication) is skipped or the fallback
+loop is removed, the widened loop will read and write past the end of the array for
+any count that is not a multiple of the new width — silent memory corruption with no
+fault. The fallback loop and scalar tail are not optional.
+
+**No existing scalar tail.** If the original function has no scalar tail (the caller
+guarantees count is an exact multiple of the original vector width), that guarantee
+must now hold for the doubled width too. If it does not, a scalar tail must be added.
+See the [Scalar tail handling](#scalar-tail-handling) section.
+
+**Array alignment.** Widening increases the natural alignment requirement: 16-byte
+aligned for XMM, 32-byte for YMM, 64-byte for ZMM. If the original used aligned
+loads (`vmovaps`, `vmovdqa`), verify that the array is aligned to the new width
+before promoting — a misaligned `vmovaps` causes a general-protection fault at
+runtime. If alignment cannot be guaranteed, switch to unaligned loads (`vmovups`,
+`vmovdqu`), which incur no penalty on modern Intel microarchitectures when the data
+happens to be aligned, and only a small penalty when it is not.
+
 #### Label handling
 
 Labels must be unique within an `asm` block.
@@ -212,7 +233,7 @@ register within the second half as well.
 
 Some low-numbered YMM registers may remain in the second half if they hold
 loop-invariant values (e.g., a broadcast constant). These need special handling in
-Step 8.
+[Step 8: handle loop-invariant XMM/YMM registers](#step-8-handle-loop-invariant-xmmymm-registers).
 
 > **Note**: This step temporarily introduces ymm16–ymm31, which requires AVX512VL.
 > That requirement will likely be removed after Steps 6–7.
@@ -294,6 +315,32 @@ Becomes:
 Apply the same merge to all other paired vector instruction groups (arithmetic,
 stores, etc.).
 
+**Sign and unsigned integer semantics.** When the loop operates on integers,
+verify that each merged instruction preserves signed vs. unsigned intent:
+
+- *Widening loads*: `vpmovsxbd` sign-extends bytes to dwords; `vpmovzxbd`
+  zero-extends. Choosing the wrong one gives silently incorrect results on
+  negative values.
+- *Comparisons*: `vpcmpgtd` is a signed comparison. There is no direct unsigned
+  greater-than in SSE/AVX2; unsigned comparisons require XOR-ing with the sign
+  bit before comparing (`vpxor` with `0x80000000`). If the original loop used a
+  signed comparison where unsigned was intended (or vice versa), widening
+  preserves that bug. Verify intent before consolidating.
+- *Arithmetic shifts*: `vpsrad` (arithmetic, sign-fills) vs. `vpsrld` (logical,
+  zero-fills). Confirm the shift direction is correct for the data type.
+
+**Lane-crossing shuffle and permute instructions.** Some instructions operate only
+within a 128-bit lane and do not cross lane boundaries: `vpermilps`, `vshufps`,
+`vpunpcklbw`, and similar. When you widen from XMM to YMM, a 128-bit intra-lane
+shuffle operates identically on each 128-bit half of the YMM register — the upper
+lane is shuffled independently of the lower lane. When you widen from YMM to ZMM,
+the same applies to each 128-bit quarter. This is correct if the original logic
+intended independent per-lane shuffles. If the intent was to shuffle across the full
+register width (e.g., to bring the highest element to the lowest position), a
+cross-lane instruction is needed instead: `vperm2f128` (YMM), `vpermd`, or
+`vpermps` (ZMM). Inspect each shuffle instruction at the consolidation step and
+confirm whether intra-lane or cross-lane behavior is intended.
+
 After Steps 6 and 7, the running example becomes:
 ```
         "    cmp     $16, %[cnt]   ; flags produced\n\t"
@@ -343,7 +390,7 @@ ZMM register using `VINSERTF64X4`:
     vinsertf64x4   $1, %%ymm3, %%zmm3, %%zmm3
 ```
 
-At the end of Step 8, no pre-promotion (narrow) registers should remain in the loop.
+At the end of [Step 8](#step-8-handle-loop-invariant-xmmymm-registers), no pre-promotion (narrow) registers should remain in the loop.
 
 ---
 
@@ -364,7 +411,7 @@ algorithm to the same state it would have reached with the narrower loop.
 
 ### Step 10: cleanup
 
-1. Remove all flag-interaction comments added in Step 1.
+1. Remove all flag-interaction comments added in [Step 1: Preparation](#step-1-preparation).
 2. Update the clobber list:
    - Replace `ymm0`–`ymm15` with the ZMM registers actually used (`zmm0`, etc.).
    - Add any new high registers (zmm16–zmm31) if they survived consolidation
@@ -373,6 +420,98 @@ algorithm to the same state it would have reached with the narrower loop.
    if any ymm16–ymm31 survived). If the `cpuid-check` skill is available, invoke
    it to verify; otherwise confirm manually against the instruction list.
 4. Apply the vzeroupper rule from the post-transformation checklist below.
+
+---
+
+## Scalar tail handling
+
+After the zipper algorithm completes, the structure is:
+
+```
+ZMM wide loop -> YMM/XMM fallback loop -> scalar tail
+```
+
+The scalar tail is the loop body from the original code that processes one element
+at a time (e.g., `vmovss`/`vaddss` in the running example). It handles the 0 to
+(width−1) remaining elements after both vector loops have run.
+
+### The scalar tail is preserved unchanged
+
+Do not widen the scalar tail. It exists precisely because there are fewer remaining
+elements than one vector iteration requires. Its job is correctness for the
+remainder — not throughput. Leave it exactly as it was in the original.
+
+### If the original has no scalar tail
+
+Some functions require the caller to guarantee that the element count is an exact
+multiple of the vector width. After widening, that guarantee must hold for the new
+width (doubled). If it does not, the remainder elements will be silently skipped.
+In this case, add a scalar tail:
+
+```c
+/* scalar tail — processes remaining count % new_vector_width elements */
+for (; i < n; i++) dst[i] = srcA[i] + srcB[i];
+```
+
+Or, for an asm block, replicate the scalar loop from the running example (labels
+3–4, `vmovss`/`vaddss`/`dec`/`jnz`).
+
+### If the original has an XMM tail (SSE -> AVX2 case)
+
+When widening SSE (4-wide) to AVX2 (8-wide), the original may have a 4-wide XMM
+tail loop rather than a purely scalar tail. In that case:
+
+- The XMM tail loop becomes the **fallback loop** (the [Step 2](#step-2-loop-replication) copy of the original),
+  handling 4–7 remaining elements.
+- A new scalar tail (0–3 elements) must be preserved or added below it.
+
+The three-tier structure is: `YMM loop → XMM fallback → scalar tail`.
+
+### AVX-512 masked tail (preferred over scalar tail for ZMM targets)
+
+For AVX-512 targets, mask registers (`k0`–`k7`) can eliminate the scalar tail
+entirely, replacing it with a single masked ZMM operation. This reduces three code
+paths to two and removes the scalar loop overhead.
+
+**Building the tail mask from the remaining element count:**
+
+```asm
+/* remaining = count % 16 (0 to 15) */
+mov     $1, %eax
+shlx    %[remaining], %eax, %eax    /* eax = 1 << remaining */
+dec     %eax                        /* eax = (1 << remaining) - 1 = mask */
+kmovw   %eax, %k1
+```
+
+**Masked load, compute, masked store:**
+
+```asm
+vmovups (%[srcA]){%k1}{z}, %zmm0   /* load remaining lanes; zero-fill rest */
+vaddps  (%[srcB]){%k1}{z}, %zmm0, %zmm0
+vmovups %zmm0, (%[dst]){%k1}       /* store only remaining lanes */
+```
+
+The `{z}` (zeroing masking) on the loads ensures unwritten lanes are zero rather
+than holding stale register contents, which prevents the arithmetic from
+incorporating garbage values in the zero-filled lanes.
+
+**In intrinsics:**
+
+```c
+__mmask16 mask = (1u << remaining) - 1;
+__m512 va = _mm512_maskz_loadu_ps(mask, srcA);
+__m512 vb = _mm512_maskz_loadu_ps(mask, srcB);
+_mm512_mask_storeu_ps(dst, mask, _mm512_add_ps(va, vb));
+```
+
+**When to use masked tail vs. scalar tail:**
+
+| Situation | Prefer |
+|---|---|
+| Target is AVX-512 and remaining count is known at runtime | Masked tail — fewer code paths, no branch to scalar |
+| Target is AVX2 (no mask registers) | Scalar tail or XMM fallback loop |
+| Remaining count is always zero (exact-multiple guarantee) | Neither — no tail needed |
+| Mixed AVX-512 / non-AVX-512 dispatch path | Masked tail in the AVX-512 variant; scalar tail in the AVX2 variant |
 
 ---
 
