@@ -6,15 +6,14 @@ description: >-
   review for performance, or write new SIMD/vectorized code — even without
   profiling data. Trigger on: serial accumulator loops, narrow SIMD (xmm/ymm
   that could be ymm/zmm), _mm* intrinsics, HITM/cmpxchg clusters, false
-  sharing, missing restrict or vzeroupper, hot symbol inside a system library
-  (.so) that may have a version gap, or any request to write a fast
-  reduction, dot product, or CPU-dispatched function. Patterns: serial
-  accumulator, TTAS spinlock, SIMD upconversion (zipper), false sharing,
-  per-CPU stats, missing vzeroupper, missing restrict, CPU dispatch,
-  library version upgrade, fast CRC32C (crc32c function name trigger,
-  single-accumulator _mm_crc32 loop, table-lookup CRC32C), known algorithms
-  (Cosine Similarity, Hamming Distance, Jaccard Distance), SIMD sort for numeric primitives
-  (float/double/int32_t/uint32_t/int64_t/uint64_t via x86-simd-sort).
+  sharing, missing restrict or vzeroupper, futex_wake/notify_all thundering
+  herd, hot symbol inside a system library (.so) with a version gap, or any
+  request to write a fast reduction, dot product, or CPU-dispatched function.
+  Patterns: serial accumulator, TTAS spinlock, SIMD upconversion (zipper),
+  false sharing, per-CPU stats, missing vzeroupper, missing restrict,
+  cv-thundering-herd, CPU dispatch, library version upgrade, fast CRC32C,
+  known algorithms (Cosine Similarity, Hamming Distance, Jaccard Distance),
+  SIMD sort (x86-simd-sort).
 ---
 
 <!-- (C) 2026 Intel Corporation, MIT license -->
