@@ -22,6 +22,7 @@ the full diagnosis and fix.
 | Hot symbol's DSO column shows a `.so` file (not the application binary); symbol appears in `references/library-versions.md` | Library version upgrade | `patterns/library-version-upgrade.md` |
 | `crc32b`/`crc32q`/`pclmulqdq` instructions dominate a hot function; or a function named `crc32c`/`crc32_c`/`compute_crc32c` is prominent; single-accumulator CRC32 loop | Fast CRC32C | `patterns/fast-crc32c.md` |
 | Hot function name matches a known algorithm (`hamming_distance`, `hamming_dist`, `cosine_similarity`, `jaccard_distance`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
+| `futex_wake`, `try_to_wake_up`, `__pthread_cond_broadcast` hot; context-switch rate scales with thread count; IPC collapse with high CPU utilization | CV thundering herd | `patterns/cv-thundering-herd.md` |
 | `std::sort`, `_introsort_loop`, `__gnu_cxx::__ops` hot in profile; data type is `float`, `double`, `int32_t`, `uint32_t`, `int64_t`, or `uint64_t` | SIMD sort | `patterns/simd-sort.md` |
 
 ---
@@ -159,6 +160,22 @@ can generate directly. Identify the ISA levels supported by the target CPU
 strategy and implementation notes.
 
 Read `references/known-algorithms.md`.
+
+---
+
+### CV thundering herd
+
+`perf report` shows `futex_wake`, `try_to_wake_up`, or
+`__pthread_cond_broadcast` consuming significant cycles — not lock contention
+symbols like `spin_lock_slowpath`. `perf stat -e context-switches` shows
+context-switch rate scaling with the number of waiting threads per broadcast.
+`perf trace -e futex` shows frequent `FUTEX_WAKE` with `val=INT_MAX` (broadcast)
+or rapid bursts of `val=1` (notify_one loop). IPC collapses while CPU utilization
+remains high — cores are busy with scheduler dispatch and mutex re-acquisition,
+not useful work. Key differentiator from lock contention: `perf lock stat`
+shows normal hold/wait times.
+
+Read `patterns/cv-thundering-herd.md`.
 
 ---
 

@@ -22,6 +22,7 @@ structure alone is a strong predictor of the performance problem.
 | Struct fields written by different threads, no `alignas(64)` between them | False sharing | `patterns/false-sharing.md` |
 | Global `count++` / `atomic_inc` / `atomic_fetch_add` on a statistics field in a hot path | Shared statistics counter | `patterns/per-cpu-stats.md` |
 | Hot function calls error-reporters / rare-case handlers without `[[gnu::cold]]` or `__attribute__((cold))` | Cold-path annotation | `patterns/cold-path-annotation.md` |
+| `pthread_cond_broadcast` / `cv.notify_all()` waking a thread pool; `notify_one()` in a loop waking N threads; dispatcher wakes all threads regardless of job count | CV thundering herd | `patterns/cv-thundering-herd.md` |
 | Function/loop named or described as a known algorithm (`hamming_distance`, `cosine_similarity`, `jaccard_distance`, `iou`, …) | Known algorithm — optimized SIMD replacement available | `references/known-algorithms.md` |
 | `std::sort`, `std::nth_element`, `std::partial_sort`, or `qsort` called on `float` / `double` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t` arrays | SIMD sort | `patterns/simd-sort.md` |
 | Function/loop named `crc32c` / `crc32_c` / `compute_crc32c`; single `_mm_crc32_u64` accumulator variable; byte-by-byte table-lookup CRC32C loop | Fast CRC32C | `patterns/fast-crc32c.md` |
@@ -152,6 +153,21 @@ primitives is an equally strong trigger. Check whether `std::stable_sort` is
 in use before recommending a replacement (no stable-sort equivalent exists).
 
 Read `patterns/simd-sort.md`.
+
+---
+
+### CV thundering herd
+
+A condition variable (`pthread_cond_broadcast` or `cv.notify_all()`) wakes all
+waiting threads when only a subset has work available. Or `notify_one()` is
+called in a sequential loop to wake N threads one by one. Common pattern: a
+dispatcher/leader thread wakes `num_threads` workers unconditionally
+(`for (i = 0; i < nthreads; i++) wake(thread[i])`) regardless of how many jobs
+are pending. Workers that find no work after waking call `sched_yield()` or
+immediately re-block. The wasted wakeups scale with thread count and become the
+dominant cost at high core count (HCC) scale.
+
+Read `patterns/cv-thundering-herd.md`.
 
 ---
 
